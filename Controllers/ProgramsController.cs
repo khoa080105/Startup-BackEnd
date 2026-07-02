@@ -90,7 +90,9 @@ namespace StartupBackend.Controllers
         {
             try
             {
-                var query = _context.ChuongTrinhDaoTaos.AsQueryable();
+                var query = _context.ChuongTrinhDaoTaos
+                    .Where(p => p.TrangThai != "Ngừng hoạt động")
+                    .AsQueryable();
 
                 if (!string.IsNullOrWhiteSpace(search))
                 {
@@ -130,7 +132,7 @@ namespace StartupBackend.Controllers
         {
             try
             {
-                var program = await _context.ChuongTrinhDaoTaos.FindAsync(id);
+                var program = await _context.ChuongTrinhDaoTaos.FirstOrDefaultAsync(p => p.MaCTDT == id && p.TrangThai != "Ngừng hoạt động");
                 if (program == null)
                     return NotFound(new { message = "Không tìm thấy chương trình đào tạo!" });
 
@@ -177,6 +179,43 @@ namespace StartupBackend.Controllers
             }
         }
 
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "ADMIN,MANAGER")] 
+        public async Task<IActionResult> SoftDeleteProgram(string id)
+        {
+            try
+            {
+                // tìm CTĐT dưới DB
+                var program = await _context.ChuongTrinhDaoTaos.FindAsync(id);
 
+                if (program == null)
+                    return NotFound(new { message = "Không tìm thấy chương trình đào tạo!" });
+
+                // kiểm tra xem nó đã bị xóa từ trước chưa
+                if (program.TrangThai == "Ngừng hoạt động")
+                {
+                    return BadRequest(new { message = "Chương trình đào tạo này đã bị xóa trước đó!" });
+                }
+
+                // lấy thông tin người thao tác từ Token
+                var updaterClaim = User.FindFirstValue(ClaimTypes.Name) ?? User.FindFirstValue(ClaimTypes.Email);
+
+                program.TrangThai = "Ngừng hoạt động";
+
+                // lưu vết lại ai là người "xóa" và xóa lúc nào
+                program.NguoiSuaDoi = updaterClaim ?? "System";
+                program.NgaySuaDoi = DateTime.UtcNow;
+
+                // Lưu thay đổi xuống Database
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Đã xóa chương trình đào tạo thành công!" });
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return StatusCode(500, new { message = "Lỗi hệ thống khi xóa chương trình đào tạo!", chiTietLoi = errorMessage });
+            }
+        }
     }
 }
