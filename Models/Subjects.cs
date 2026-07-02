@@ -15,7 +15,6 @@ namespace StartupBackend.Models
         public string TrangThaiHoanThanh { get; set; }
 
         // Khóa ngoại tới ChuongTrinhDaoTao
-        [Required]
         public string ChuongTrinhDaoTaoMa { get; set; }
         [ForeignKey("ChuongTrinhDaoTaoMa")]
         public Programs ChuongTrinhDaoTao { get; set; }

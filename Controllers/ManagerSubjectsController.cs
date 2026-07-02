@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using StartupBackend.Data;
 using StartupBackend.DTOs;
 using StartupBackend.Models;
+using System.Security.Claims;
 
 namespace StartupBackend.Controllers
 {
@@ -75,25 +76,51 @@ namespace StartupBackend.Controllers
         [HttpPost("subjects")]
         public async Task<IActionResult> CreateSubject([FromBody] ManagerSubjectRequest request)
         {
-            if (await _context.MonHocs.AnyAsync(m => m.MaMonHoc == request.MaMonHoc))
+            try
             {
-                return BadRequest(new { message = "Mã môn học này đã tồn tại trong hệ thống!" });
+                // lấy thông tin tài khoản đang thao tác từ token
+                var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (userIdClaim == null)
+                    return Unauthorized(new { message = "Không xác định được người dùng!" });
+
+                int currentUserId = int.Parse(userIdClaim);
+                var currentUser = await _context.TaiKhoans.FindAsync(currentUserId);
+
+                if (currentUser == null)
+                    return Unauthorized(new { message = "Tài khoản không tồn tại!" });
+
+                // nếu chưa tạo CTĐT thì ko thể tạo môn học
+                if (string.IsNullOrWhiteSpace(currentUser.MaCTDT))
+                {
+                    return BadRequest(new { message = "Tài khoản của bạn chưa được phân bổ Chương trình đào tạo nào, không thể tạo môn học!" });
+                }
+
+                if (await _context.MonHocs.AnyAsync(m => m.MaMonHoc == request.MaMonHoc))
+                {
+                    return BadRequest(new { message = "Mã môn học này đã tồn tại trong hệ thống!" });
+                }
+
+                var newSubject = new Subjects
+                {
+                    MaMonHoc = request.MaMonHoc,
+                    TenMonHoc = request.TenMonHoc,
+                    SoTinChiLyThuyet = request.SoTinChiLyThuyet,
+                    SoTinChiThucHanh = request.SoTinChiThucHanh,
+                    ChuongTrinhDaoTaoMa = currentUser.MaCTDT, // lấy MaCTDT từ tài khoản đang thao tác
+
+                    TrangThaiHoanThanh = "Chưa hoàn thành" // Mặc định khi mới tạo
+                };
+
+                _context.MonHocs.Add(newSubject);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Tạo môn học thành công!", maMonHoc = newSubject.MaMonHoc });
             }
-
-            var newSubject = new Subjects
+            catch (Exception ex)
             {
-                MaMonHoc = request.MaMonHoc,
-                TenMonHoc = request.TenMonHoc,
-                SoTinChiLyThuyet = request.SoTinChiLyThuyet,
-                SoTinChiThucHanh = request.SoTinChiThucHanh,
-                ChuongTrinhDaoTaoMa = request.ChuongTrinhDaoTaoMa,
-                TrangThaiHoanThanh = "Chưa hoàn thành" // Mặc định khi mới tạo
-            };
-
-            _context.MonHocs.Add(newSubject);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Tạo môn học thành công!", maMonHoc = newSubject.MaMonHoc });
+                var errorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return StatusCode(500, new { message = "Lỗi hệ thống khi tạo môn học!", chiTietLoi = errorMessage });
+            }
         }
 
         // 3. Chi tiết môn học (Dùng để đổ dữ liệu lên form chỉnh sửa)
@@ -112,21 +139,45 @@ namespace StartupBackend.Controllers
         // 4. Cập nhật thông tin môn học
         // Endpoint: PUT /manager/subjects/{id}
         [HttpPut("subjects/{id}")]
-        public async Task<IActionResult> UpdateSubject(string id, [FromBody] ManagerSubjectRequest request)
+        public async Task<IActionResult> UpdateSubject(string maMonHoc, [FromBody] ManagerSubjectRequest request)
         {
-            var subject = await _context.MonHocs.FirstOrDefaultAsync(m => m.MaMonHoc == id);
-            if (subject == null)
+            try
             {
-                return NotFound(new { message = "Không tìm thấy môn học!" });
+                var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (userIdClaim == null)
+                    return Unauthorized(new { message = "Không xác định được người dùng!" });
+
+                int currentUserId = int.Parse(userIdClaim);
+                var currentUser = await _context.TaiKhoans.FindAsync(currentUserId);
+
+                if (currentUser == null)
+                    return Unauthorized(new { message = "Tài khoản không tồn tại!" });
+
+                var subject = await _context.MonHocs.FindAsync(maMonHoc);
+                if (subject == null)
+                {
+                    return NotFound(new { message = "Không tìm thấy môn học!" });
+                }
+
+                if (subject.ChuongTrinhDaoTaoMa != currentUser.MaCTDT)
+                {
+                    return StatusCode(403, new { message = "Bạn không có quyền chỉnh sửa môn học thuộc Chương trình đào tạo khác!" });
+                }
+
+                subject.TenMonHoc = request.TenMonHoc;
+                subject.SoTinChiLyThuyet = request.SoTinChiLyThuyet;
+                subject.SoTinChiThucHanh = request.SoTinChiThucHanh;
+                subject.TrangThaiHoanThanh = request.TrangThaiHoanThanh; 
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Cập nhật môn học thành công!" });
             }
-
-            subject.TenMonHoc = request.TenMonHoc;
-            subject.SoTinChiLyThuyet = request.SoTinChiLyThuyet;
-            subject.SoTinChiThucHanh = request.SoTinChiThucHanh;
-            subject.ChuongTrinhDaoTaoMa = request.ChuongTrinhDaoTaoMa;
-
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Cập nhật môn học thành công!" });
+            catch (Exception ex)
+            {
+                var errorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return StatusCode(500, new { message = "Lỗi hệ thống khi cập nhật môn học!", chiTietLoi = errorMessage });
+            }
         }
 
         // 5. Xóa môn học
