@@ -8,7 +8,8 @@ namespace StartupBackend.DTOs
         public string TenMonHoc { get; set; } = string.Empty;
         public int SoTinChiLyThuyet { get; set; }
         public int SoTinChiThucHanh { get; set; }
-        public string ChuongTrinhDaoTaoMa { get; set; } = string.Empty; // Bắt buộc theo Model có sẵn
+        public string ChuongTrinhDaoTaoMa { get; set; } = string.Empty;
+        public string TrangThaiHoanThanh { get; set; } = string.Empty; // Tình trạng biên soạn (Hoàn thành/Chưa hoàn thành)
     }
 
     // DTO trả dữ liệu ra danh sách môn học cho UI hiển thị
